@@ -1,14 +1,15 @@
 [tool.poetry]
-name = "msolspray"
-version = "1.1.1"
+name = "msolspray-ng"
+version = "2.0.0"
 description = "A password spraying tool for Microsoft Online accounts (Azure/O365)"
-authors = ["Your Name <you@example.com>"]
+authors = ["y0k4i <7395296+y0k4i-1337@users.noreply.github.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.9"
 requests = {extras = ["socks"], version = "^2.27.1"}
 fake-useragent = "^0.1.11"
+stem = "^1.8.2"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"

