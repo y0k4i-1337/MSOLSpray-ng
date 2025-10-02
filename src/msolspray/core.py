@@ -40,8 +40,8 @@ def try_login(
                 proxies=proxies,
             )
         except Exception as e:
-            retry -= 1
-            if retry == 0:
+            retries -= 1
+            if retries == 0:
                 print_error(f"Error: {e}")
         else:
             issued = True
