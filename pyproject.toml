@@ -1,22 +1,41 @@
-[tool.poetry]
+[project]
 name = "msolspray-ng"
-version = "2.0.0"
+version = "2.1.0"
 description = "A password spraying tool for Microsoft Online accounts (Azure/O365)"
-authors = ["y0k4i <7395296+y0k4i-1337@users.noreply.github.com>"]
+authors = [{name = "y0k4i", email = "7395296+y0k4i-1337@users.noreply.github.com"}]
 license = "MIT"
+readme = "README.md"
+keywords = ["security", "pentesting", "password spraying", "microsoft", "azure", "o365"]
+classifiers = [
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+    "Topic :: Security :: Vulnerability Management",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Developers",
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
 requests = {extras = ["socks"], version = "^2.27.1"}
 fake-useragent = "^0.1.11"
-stem = "^1.8.2"
+colorama = "^0.4.6"
 
-[tool.poetry.group.dev.dependencies]
-black = "^23.3.0"
-flake8 = "^6.0.0"
-bandit = "^1.7.5"
-pydocstyle = "^6.3.0"
+[project.urls]
+"Repository"= "https://github.com/y0k4i-1337/MSOLSpray-ng.git"
+"Issues" = "https://github.com/y0k4i-1337/MSOLSpray-ng/issues"
+
+[tool.poetry]
+packages = [{include = "msolspray", from = "src"}]
+
+[tool.poetry.scripts]
+msolspray = "msolspray.cli:main"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
