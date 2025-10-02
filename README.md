@@ -27,14 +27,24 @@ blocked by Azure Smart Lockout.
 
 Since Amazon started to flag FireProx endpoints, the script now supports Tor
 as well. You can use it with the `--tor` option. The script will then
-automatically create a new Tor circuit after the specified interval.
+automatically create a pool of Tor circuits and rotate over them for each
+login attempt.
 
 ## Tor
 
-In order to proxy requests through Tor, you will have to configure your
-`torrc` to open a control port and set a password. Instructions can be found
-[here](https://wiki.archlinux.org/title/Tor#Open_Tor_ControlPort) and
-[here](https://wiki.archlinux.org/title/Tor#Set_a_Tor_Control_password).
+You can also use this tool with Tor. For that, you need to have Tor installed and
+running on your machine. You can then use the `--tor` option to route requests
+through Tor.
+
+In order to bypass throttling, the script can generate `N` number of different
+circuits through
+[IsolateSocksAuth](https://spec.torproject.org/proposals/351-socks-auth-extensions.html)
+feature. For that, you need to set this sub-option in your `torrc` file
+(usually located at `/etc/tor/torrc` on Linux or `/opt/homebrew/etc/tor/torrc` on MacOS):
+
+```
+SOCKSPort 9050 IsolateSOCKSAuth
+```
 
 ## Quick Start
 ### Requirements
@@ -44,69 +54,60 @@ The easiest way to install dependencies is with `poetry`. You can do this by run
 poetry install
 ```
 
-Alternatively, you can use `pip`:
-```
-pip install -r requirements.txt
-```
-
 ### MSOLSpray-ng
 
 You will need a userlist file with target email-addresses one per line.
 ```
-usage: msolspray-ng.py [-h] (-u USERNAME | -U FILE | -C FILE) [-p PASSWORD | -P FILE] [--sep SEP] [-o OUTFILE] [-x PROXY] [--url URL] [-f | --force-first] [--shuffle] [-a {0,1,2}] [--notify NOTIFY] [--notify-actions NOTIFY_ACTIONS] [--notify-each] [-s SLEEP] [--pause PAUSE]
-                       [-j JITTER] [-l PERCENT] [-H HEADERS] [-A NAME] [--rua] [--timeout TIMEOUT] [--tor] [--tor-port SOCKS_PORT] [--tor-control-port CONTROL_PORT] [--tor-control-pw CONTROL_PW] [--tor-refresh-interval REFRESH_INTERVAL] [-v]
+usage: msolspray [-h] (-u USERNAME | -U FILE | -C FILE | --tor-test) [-p PASSWORD | -P FILE] [--sep SEP] [-o OUTFILE]
+                 [-x PROXY] [--url URL] [-f | --force-first] [--shuffle] [-a {0,1,2}] [--notify NOTIFY]
+                 [--notify-actions NOTIFY_ACTIONS] [--notify-each] [-s SLEEP] [--pause PAUSE] [-j JITTER] [-l PERCENT]
+                 [-H HEADERS] [-A NAME] [--rua] [--timeout TIMEOUT] [--tor] [--tor-port SOCKS_PORT]
+                 [--tor-pool TOR_POOL] [-v]
 
 This script will perform password spraying against Microsoft Online accounts (Azure/O365). The script logs if a user cred is valid, if MFA is enabled on the account, if a tenant doesn't exist, if a user doesn't exist, if the account is locked, or if the account is disabled.
 
 options:
   -h, --help            show this help message and exit
-  -u USERNAME, --username USERNAME
+  -u, --username USERNAME
                         Single username
-  -U FILE, --usernames FILE
-                        File containing usernames in the format 'user@domain'.
-  -C FILE, --creds FILE
-                        File containing credentials in the format '<user><separator><password>'.
-  -p PASSWORD, --password PASSWORD
+  -U, --usernames FILE  File containing usernames in the format 'user@domain'.
+  -C, --creds FILE      File containing credentials in the format '<user><separator><password>'.
+  --tor-test            Test Tor connectivity and exit.
+  -p, --password PASSWORD
                         Single password.
-  -P FILE, --passwords FILE
-                        File containing passwords, one per line.
+  -P, --passwords FILE  File containing passwords, one per line.
   --sep SEP             Separator used when parsing credentials file in CSV format.
-  -o OUTFILE, --out OUTFILE
-                        A file to output valid results to (default: valid_creds.txt).
-  -x PROXY, --proxy PROXY
-                        Use proxy on requests (e.g. http://127.0.0.1:8080)
-  --url URL             A comma-separated list of URL(s) to spray against (default: https://login.microsoft.com). Potentially useful if pointing at an API Gateway URL generated with something like FireProx to randomize the IP address you are authenticating from.
+  -o, --out OUTFILE     A file to output valid results to (default: valid_creds.txt).
+  -x, --proxy PROXY     Use proxy on requests (e.g. http://127.0.0.1:8080)
+  --url URL             A comma-separated list of URL(s) to spray against (default: https://login.microsoft.com).
+                        Potentially useful if pointing at an API Gateway URL generated with something like FireProx to
+                        randomize the IP address you are authenticating from.
   -f, --force           Forces the spray to continue and not stop when multiple account lockouts are detected.
   --force-first         Like --force but only for first iteration. Use it with '-a 2' for optimization.
   --shuffle             Shuffle user list.
-  -a {0,1,2}, --auto-remove {0,1,2}
-                        Auto remove accounts from next iterations (0: valid credentials (default), 1: previous + nonexistent/disabled, 2: previous + locked).
+  -a, --auto-remove {0,1,2}
+                        Auto remove accounts from next iterations (0: valid credentials (default), 1: previous +
+                        nonexistent/disabled, 2: previous + locked).
   --notify NOTIFY       Slack webhook for sending notifications about results (default: None).
   --notify-actions NOTIFY_ACTIONS
                         Slack webhook for sending notifications about needed actions (default: same as --notify).
-  --notify-each         If set in conjunction with --notify WEBHOOK, it will notify each valid creds besides final summary.
-  -s SLEEP, --sleep SLEEP
-                        Sleep this many seconds between tries (default: 0).
+  --notify-each         If set in conjunction with --notify WEBHOOK, it will notify each valid creds besides final
+                        summary.
+  -s, --sleep SLEEP     Sleep this many seconds between tries (default: 0).
   --pause PAUSE         Pause (in minutes) between each iteration (default: 15).
-  -j JITTER, --jitter JITTER
-                        Maximum of additional delay given in percentage over base delay (default: 0).
-  -l PERCENT, --max-lockout PERCENT
+  -j, --jitter JITTER   Maximum of additional delay given in percentage over base delay (default: 0).
+  -l, --max-lockout PERCENT
                         Maximum lockouts (in percent) to be observed before ask to abort execution. (default: 10).
-  -H HEADERS, --header HEADERS
-                        Extra header to include in the request (can be used multiple times).
-  -A NAME, --user-agent NAME
-                        Send User-Agent NAME to server (default: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36").
+  -H, --header HEADERS  Extra header to include in the request (can be used multiple times).
+  -A, --user-agent NAME
+                        Send User-Agent NAME to server (default: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+                        AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36").
   --rua                 Send random User-Agent in each request.
   --timeout TIMEOUT     Timeout for requests (default: 4)
-  --tor                 Use tor for requests.
+  --tor                 Use Tor for requests (overrides --proxy).
   --tor-port SOCKS_PORT
                         Tor socks port to use (default: 9050).
-  --tor-control-port CONTROL_PORT
-                        Tor control port to use (default: 9051).
-  --tor-control-pw CONTROL_PW
-                        Password for Tor control port (default: None).
-  --tor-refresh-interval REFRESH_INTERVAL
-                        Interval (in number of login attempts) to refresh Tor circuit (default: 10).
+  --tor-pool TOR_POOL   Number of Tor circuits to create (default: 10).
   -v, --verbose         Prints usernames that could exist in case of invalid password.
 
 EXAMPLE USAGE:
