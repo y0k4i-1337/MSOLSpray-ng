@@ -34,7 +34,4 @@ def notify(webhook, text):
         text (str): Text to be sent
     """
     notifier = SlackWebhook(webhook)
-    try:
-        notifier.post(text)
-    except BaseException:
-        pass
+    notifier.post(text)

@@ -5,7 +5,7 @@ from colorama import Fore, Style
 colorama.init(autoreset=True)
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
 # internal color constants
 _RED = Fore.RED

@@ -11,6 +11,7 @@ from msolspray.tor import test_tor, test_circuits
 from msolspray.notify import notify
 from msolspray.utils import (
     get_list_from_file,
+    print_debug,
     print_error,
     print_info,
     print_success,
@@ -264,8 +265,9 @@ def parse_args():
     parser.add_argument(
         "-v",
         "--verbose",
-        action="store_true",
-        help="Prints usernames that could exist in case of invalid password.",
+        action="count",
+        default=0,
+        help="Increase verbosity of output. Can be used multiple times for more verbosity.",
     )
 
     args = parser.parse_args()
@@ -289,7 +291,9 @@ def main():
 
     args = parse_args()
 
-    if args.verbose:
+    if args.verbose == 1:
+        logger.setLevel("INFO")
+    elif args.verbose >= 2:
         logger.setLevel("DEBUG")
 
     if args.tor_test:
@@ -320,8 +324,12 @@ def main():
         for pindex, password in enumerate(passwords):
             credentials = [f"{username}{args.sep}{password}" for username in usernames]
             users_to_remove = try_all_credentials(credentials, args, pindex)
+            if len(users_to_remove) > 0:
+                print_debug("Removing users from next iteration.")
             for user in users_to_remove:
                 try:
                     usernames.remove(user)
                 except Exception as e:
                     print_warning(f"Error while removing {user} from usernames: {e}")
+
+    print_info("No more credentials to spray. Exiting.")

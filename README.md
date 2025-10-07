@@ -108,7 +108,7 @@ options:
   --tor-port SOCKS_PORT
                         Tor socks port to use (default: 9050).
   --tor-pool TOR_POOL   Number of Tor circuits to create (default: 10).
-  -v, --verbose         Prints usernames that could exist in case of invalid password.
+  -v, --verbose         Increase verbosity of output. Can be used multiple times for more verbosity.
 
 EXAMPLE USAGE:
 This command will use the provided userlist and attempt to authenticate to each account with a password of Winter2020.
