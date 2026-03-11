@@ -123,3 +123,11 @@ This command will create a new tor circuit every 5 login attempts and use it to 
 TIPS:
 [1] When using along with FireProx, pass option -H "X-My-X-Forwarded-For: 127.0.0.1" to spoof origin IP.
 ```
+
+## :coffee: Support ##
+
+<p><a href="https://www.buymeacoffee.com/y0k4i"> <img align="left" src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" width="210" alt="y0k4i" /></a></p><br><br>
+
+&#xa0;
+
+Made with :green_heart: by <a href="https://github.com/y0k4i-1337" target="_blank">y0k4i</a>
